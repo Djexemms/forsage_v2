@@ -33,13 +33,13 @@ const [vaultPDA] = PublicKey.findProgramAddressSync([Buffer.from("vault")], PROG
 
 function getAdminPDA() {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("user_account"), ADMIN_WALLET.toBuffer()], PROGRAM_ID
+    [Buffer.from("forsage_user"), ADMIN_WALLET.toBuffer()], PROGRAM_ID
   )[0];
 }
 
 function getUserPDA(wallet: PublicKey) {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("user_account"), wallet.toBuffer()], PROGRAM_ID
+    [Buffer.from("forsage_user"), wallet.toBuffer()], PROGRAM_ID
   )[0];
 }
 
