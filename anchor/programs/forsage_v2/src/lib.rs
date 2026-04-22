@@ -43,11 +43,11 @@ pub mod forsage_v2 {
     // ── Initialize global stats (once) ────────────────────────────────────
     pub fn initialize_global(ctx: Context<InitializeGlobal>) -> Result<()> {
         let stats = &mut ctx.accounts.global_stats;
-        stats.authority        = *ctx.accounts.authority.key;
+        stats.authority           = *ctx.accounts.authority.key;
         stats.total_gem_collected = 0;
-        stats.total_users      = 0;
-        stats.total_referrals  = 0;
-        stats.total_matrices   = 0;
+        stats.total_users         = 0;
+        stats.total_referrals     = 0;
+        stats.total_matrices      = 0;
         msg!("CoreSage global stats initialized.");
         Ok(())
     }
@@ -58,20 +58,43 @@ pub mod forsage_v2 {
         Ok(())
     }
 
+    // ── Register admin as root node (no referrer, no fee) ─────────────────
+    /// Called once during initialization. Creates the admin's UserState so
+    /// all other users can reference it as their root referrer.
+    pub fn register_admin(ctx: Context<RegisterAdmin>) -> Result<()> {
+        let user_account = &mut ctx.accounts.user_account;
+        user_account.owner            = *ctx.accounts.admin.key;
+        user_account.referrer         = *ctx.accounts.admin.key; // root node, self-referral
+        user_account.x3_level         = 0;
+        user_account.x6_level         = 0;
+        user_account.x3_slots_filled  = 0;
+        user_account.x6_slots_filled  = 0;
+        user_account.x3_matrix_count  = 0;
+        user_account.x6_matrix_count  = 0;
+        user_account.total_gem_spent  = 0;
+        user_account.total_earned     = 0;
+        user_account.last_claim_time  = 0;
+        user_account.is_blocked_x3    = false;
+        user_account.is_blocked_x6    = false;
+        user_account.direct_referrals = 0;
+        user_account.total_referrals  = 0;
+
+        let stats = &mut ctx.accounts.global_stats;
+        stats.total_users = stats
+            .total_users
+            .checked_add(1)
+            .ok_or(CoreSageError::Overflow)?;
+
+        msg!("Admin registered as root referrer: {}", ctx.accounts.admin.key());
+        Ok(())
+    }
+
     // ── Register with referrer ────────────────────────────────────────────
     /// referrer_key: the wallet address of whoever referred this user.
-    /// Pass Pubkey::default() (all zeros) if no referrer.
+    /// Pass Pubkey::default() (all zeros) if no referrer — fee goes to admin.
     pub fn register(ctx: Context<Register>, referrer_key: Pubkey) -> Result<()> {
         let fee = REGISTRATION_FEE;
 
-        // Determine actual referrer — default to admin if none supplied
-        let referrer = if referrer_key == Pubkey::default() {
-            ADMIN
-        } else {
-            referrer_key
-        };
-
-        // 60% to referrer, 40% to vault
         let referrer_amount = fee
             .checked_mul(REFERRER_PERCENT).unwrap()
             .checked_div(100).unwrap();
@@ -79,7 +102,7 @@ pub mod forsage_v2 {
             .checked_mul(VAULT_PERCENT).unwrap()
             .checked_div(100).unwrap();
 
-        // Transfer 60% → referrer gem token account
+        // Transfer 60% → referrer_gem_token (admin's ATA if no referrer, referrer's ATA otherwise)
         token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
@@ -107,72 +130,59 @@ pub mod forsage_v2 {
 
         // Initialize user account
         let user_account = &mut ctx.accounts.user_account;
-        user_account.owner           = *ctx.accounts.user.key;
-        user_account.referrer        = referrer;
-        user_account.x3_level        = 0;
-        user_account.x6_level        = 0;
-        user_account.x3_slots_filled = 0;
-        user_account.x6_slots_filled = 0;
-        user_account.x3_matrix_count = 0;
-        user_account.x6_matrix_count = 0;
-        user_account.total_gem_spent = fee;
-        user_account.total_earned    = referrer_amount; // if they're also a referrer elsewhere
-        user_account.last_claim_time = 0;
-        user_account.is_blocked_x3   = false;
-        user_account.is_blocked_x6   = false;
+        user_account.owner            = *ctx.accounts.user.key;
+        user_account.referrer         = if referrer_key == Pubkey::default() { ADMIN } else { referrer_key };
+        user_account.x3_level         = 0;
+        user_account.x6_level         = 0;
+        user_account.x3_slots_filled  = 0;
+        user_account.x6_slots_filled  = 0;
+        user_account.x3_matrix_count  = 0;
+        user_account.x6_matrix_count  = 0;
+        user_account.total_gem_spent  = fee;
+        user_account.total_earned     = 0;
+        user_account.last_claim_time  = 0;
+        user_account.is_blocked_x3    = false;
+        user_account.is_blocked_x6    = false;
         user_account.direct_referrals = 0;
         user_account.total_referrals  = 0;
 
-        // Update referrer's slot count + referral count
-        let referrer_account = &mut ctx.accounts.referrer_account;
-        referrer_account.x3_slots_filled = referrer_account
-            .x3_slots_filled
-            .checked_add(1)
-            .ok_or(CoreSageError::Overflow)?;
-        referrer_account.direct_referrals = referrer_account
-            .direct_referrals
-            .checked_add(1)
-            .ok_or(CoreSageError::Overflow)?;
-        referrer_account.total_referrals = referrer_account
-            .total_referrals
-            .checked_add(1)
-            .ok_or(CoreSageError::Overflow)?;
-        referrer_account.total_earned = referrer_account
-            .total_earned
-            .checked_add(referrer_amount)
-            .ok_or(CoreSageError::Overflow)?;
+        // Update referrer account stats only when a real referrer is provided.
+        // When referrer_key is default, the 60% goes to admin's token account
+        // directly (no UserState mutation needed — admin self-manages).
+        if referrer_key != Pubkey::default() {
+            let referrer_account = &mut ctx.accounts.referrer_account;
+            referrer_account.x3_slots_filled = referrer_account
+                .x3_slots_filled.checked_add(1).ok_or(CoreSageError::Overflow)?;
+            referrer_account.direct_referrals = referrer_account
+                .direct_referrals.checked_add(1).ok_or(CoreSageError::Overflow)?;
+            referrer_account.total_referrals = referrer_account
+                .total_referrals.checked_add(1).ok_or(CoreSageError::Overflow)?;
+            referrer_account.total_earned = referrer_account
+                .total_earned.checked_add(referrer_amount).ok_or(CoreSageError::Overflow)?;
 
-        // Check if referrer's X3 matrix is now complete (3 slots filled)
-        if referrer_account.x3_slots_filled >= X3_SLOTS {
-            referrer_account.x3_slots_filled = 0; // reset for next cycle
-            referrer_account.x3_matrix_count = referrer_account
-                .x3_matrix_count
-                .checked_add(1)
-                .ok_or(CoreSageError::Overflow)?;
-            msg!("X3 matrix completed for {}! Cycle #{}", referrer, referrer_account.x3_matrix_count);
+            if referrer_account.x3_slots_filled >= X3_SLOTS {
+                referrer_account.x3_slots_filled = 0;
+                referrer_account.x3_matrix_count = referrer_account
+                    .x3_matrix_count.checked_add(1).ok_or(CoreSageError::Overflow)?;
+                msg!("X3 matrix completed for referrer! Cycle #{}", referrer_account.x3_matrix_count);
+            }
         }
 
         // Update global stats
         let stats = &mut ctx.accounts.global_stats;
         stats.total_gem_collected = stats
-            .total_gem_collected
-            .checked_add(fee)
-            .ok_or(CoreSageError::Overflow)?;
+            .total_gem_collected.checked_add(fee).ok_or(CoreSageError::Overflow)?;
         stats.total_users = stats
-            .total_users
-            .checked_add(1)
-            .ok_or(CoreSageError::Overflow)?;
+            .total_users.checked_add(1).ok_or(CoreSageError::Overflow)?;
         if referrer_key != Pubkey::default() {
             stats.total_referrals = stats
-                .total_referrals
-                .checked_add(1)
-                .ok_or(CoreSageError::Overflow)?;
+                .total_referrals.checked_add(1).ok_or(CoreSageError::Overflow)?;
         }
 
         msg!(
-            "User {} registered. Referrer: {}. Referrer got {} GEM. Vault got {} GEM.",
+            "User {} registered. Referrer: {}. {} GEM to referrer/admin. {} GEM to vault.",
             ctx.accounts.user.key(),
-            referrer,
+            user_account.referrer,
             referrer_amount / DECIMALS,
             vault_amount / DECIMALS
         );
@@ -181,7 +191,6 @@ pub mod forsage_v2 {
 
     // ── Upgrade level ─────────────────────────────────────────────────────
     /// matrix: 0 = X3, 1 = X6
-    /// If user is blocked (hasn't upgraded), payment goes to upline instead.
     pub fn upgrade_level(ctx: Context<UpgradeLevel>, matrix: u8, next_level: u8) -> Result<()> {
         require!(matrix <= 1, CoreSageError::InvalidMatrix);
         require!(next_level >= 1 && next_level <= MAX_LEVEL, CoreSageError::InvalidLevel);
@@ -196,7 +205,6 @@ pub mod forsage_v2 {
 
         let cost = LEVEL_COSTS[(next_level - 1) as usize];
 
-        // 60% to referrer (or upline), 40% to vault
         let referrer_amount = cost
             .checked_mul(REFERRER_PERCENT).unwrap()
             .checked_div(100).unwrap();
@@ -233,48 +241,36 @@ pub mod forsage_v2 {
         // Update user
         match matrix {
             0 => {
-                user_account.x3_level     = next_level;
+                user_account.x3_level      = next_level;
                 user_account.is_blocked_x3 = false;
-                // Update X6 slots on upgrade
                 user_account.x6_slots_filled = user_account
-                    .x6_slots_filled
-                    .checked_add(1)
-                    .ok_or(CoreSageError::Overflow)?;
-                // Check X6 matrix completion (6 slots)
+                    .x6_slots_filled.checked_add(1).ok_or(CoreSageError::Overflow)?;
                 if user_account.x6_slots_filled >= X6_SLOTS {
                     user_account.x6_slots_filled = 0;
                     user_account.x6_matrix_count = user_account
-                        .x6_matrix_count
-                        .checked_add(1)
-                        .ok_or(CoreSageError::Overflow)?;
+                        .x6_matrix_count.checked_add(1).ok_or(CoreSageError::Overflow)?;
                     msg!("X6 matrix completed! Cycle #{}", user_account.x6_matrix_count);
                 }
             },
             1 => {
-                user_account.x6_level     = next_level;
+                user_account.x6_level      = next_level;
                 user_account.is_blocked_x6 = false;
             },
             _ => {}
         }
 
         user_account.total_gem_spent = user_account
-            .total_gem_spent
-            .checked_add(cost)
-            .ok_or(CoreSageError::Overflow)?;
+            .total_gem_spent.checked_add(cost).ok_or(CoreSageError::Overflow)?;
 
         // Update referrer earned
         let referrer_account = &mut ctx.accounts.referrer_account;
         referrer_account.total_earned = referrer_account
-            .total_earned
-            .checked_add(referrer_amount)
-            .ok_or(CoreSageError::Overflow)?;
+            .total_earned.checked_add(referrer_amount).ok_or(CoreSageError::Overflow)?;
 
         // Global stats
         let stats = &mut ctx.accounts.global_stats;
         stats.total_gem_collected = stats
-            .total_gem_collected
-            .checked_add(cost)
-            .ok_or(CoreSageError::Overflow)?;
+            .total_gem_collected.checked_add(cost).ok_or(CoreSageError::Overflow)?;
 
         msg!(
             "User {} upgraded {} to Level {}. Cost: {} GEM. Referrer got {} GEM.",
@@ -327,9 +323,7 @@ pub mod forsage_v2 {
 
         user_account.last_claim_time = now;
         user_account.total_earned = user_account
-            .total_earned
-            .checked_add(claim_amount)
-            .ok_or(CoreSageError::Overflow)?;
+            .total_earned.checked_add(claim_amount).ok_or(CoreSageError::Overflow)?;
 
         msg!("User {} claimed {} GEM.", ctx.accounts.user.key(), claim_amount / DECIMALS);
         Ok(())
@@ -401,6 +395,25 @@ pub struct InitializeVault<'info> {
 }
 
 #[derive(Accounts)]
+pub struct RegisterAdmin<'info> {
+    #[account(
+        init, payer = admin,
+        space = UserState::SIZE,
+        seeds = [b"user_account", admin.key().as_ref()], bump
+    )]
+    pub user_account: Account<'info, UserState>,
+
+    #[account(mut, constraint = admin.key() == ADMIN @ CoreSageError::Unauthorized)]
+    pub admin: Signer<'info>,
+
+    #[account(mut, seeds = [b"global_stats"], bump)]
+    pub global_stats: Account<'info, GlobalStats>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(referrer_key: Pubkey)]
 pub struct Register<'info> {
     #[account(
         init, payer = user,
@@ -409,12 +422,11 @@ pub struct Register<'info> {
     )]
     pub user_account: Account<'info, UserState>,
 
-    /// The referrer's user account — must already be registered
-    /// If no referrer, pass the admin's user account
-    #[account(
-        mut,
-        seeds = [b"user_account", referrer_account.owner.as_ref()], bump
-    )]
+    /// The referrer's UserState PDA.
+    /// When referrer_key is Pubkey::default(), pass the admin's UserState PDA here —
+    /// the on-chain code won't mutate it, but Anchor still needs a valid account in the slot.
+    /// Seed is derived from referrer_key (or admin if default) — validated client-side.
+    #[account(mut)]
     pub referrer_account: Account<'info, UserState>,
 
     #[account(mut)]
@@ -430,7 +442,8 @@ pub struct Register<'info> {
     )]
     pub user_gem_token: Account<'info, TokenAccount>,
 
-    /// Referrer's GEM token account — receives 60%
+    /// Referrer's GEM token account — receives 60%.
+    /// When no referrer, pass admin's ATA here so the 60% routes to admin.
     #[account(
         mut,
         constraint = referrer_gem_token.mint == GEM_MINT_ADDRESS @ CoreSageError::InvalidTokenOwner
@@ -457,10 +470,7 @@ pub struct UpgradeLevel<'info> {
     pub user_account: Account<'info, UserState>,
 
     /// Referrer's account — receives 60% of upgrade payment
-    #[account(
-        mut,
-        seeds = [b"user_account", referrer_account.owner.as_ref()], bump
-    )]
+    #[account(mut)]
     pub referrer_account: Account<'info, UserState>,
 
     #[account(mut)]
