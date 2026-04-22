@@ -1,0 +1,20 @@
+[toolchain]
+package_manager = "yarn"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+forsage_v2 = "DhNMofqKPt5hhUkQCRFHjDC6jPQz5sHhuYR59ZGT8XCX"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+url="https://devnet.helius-rpc.com/?api-key=bb08c725-8625-40bd-9657-0700569044e7"
+
+
+[hooks]
+
+[scripts]
+initialize = "npx ts-node scripts/initialize.ts"

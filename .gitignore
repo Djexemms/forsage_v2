@@ -1,0 +1,14 @@
+# Node & Next.js
+node_modules/
+.next/
+web/.next/
+
+# Rust & Anchor
+target/
+anchor/target/
+test-ledger/
+.anchor/
+
+# Environment Variables (Keep secrets safe!)
+.env
+.env.local
