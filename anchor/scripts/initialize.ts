@@ -27,7 +27,7 @@ async function main() {
     program.programId
   );
   const [adminUserPDA] = anchor.web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("user_account"), admin.toBuffer()],
+    [Buffer.from("forsage_user"), admin.toBuffer()],
     program.programId
   );
 
@@ -133,14 +133,14 @@ export async function registerUser(
     [Buffer.from("vault")], program.programId
   );
   const [userPDA] = anchor.web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("user_account"), user.toBuffer()], program.programId
+    [Buffer.from("forsage_user"), user.toBuffer()], program.programId
   );
 
   // When no referrer: referrerAccount = admin's UserState PDA (passed but not mutated)
   // When referrer exists: referrerAccount = referrer's UserState PDA
   const referrerAccountOwner = isNoReferrer ? ADMIN_PUBKEY : referrerWallet!;
   const [referrerPDA] = anchor.web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("user_account"), referrerAccountOwner.toBuffer()], program.programId
+    [Buffer.from("forsage_user"), referrerAccountOwner.toBuffer()], program.programId
   );
 
   // ── Token accounts ─────────────────────────────────────────────────────

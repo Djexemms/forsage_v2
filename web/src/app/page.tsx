@@ -15,7 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const PROGRAM_ID       = new PublicKey("DhNMofqKPt5hhUkQCRFHjDC6jPQz5sHhuYR59ZGT8XCX");
+const PROGRAM_ID       = new PublicKey("6W97AyDjAv4thPh1WohTPkdYwdC2TuP1yfYQy1oakHZe");
 const GEM_MINT         = new PublicKey("H2y3xXuZmCXYHgHkgmPr1q6SWBjzW3BjVzEyuEpSHn5e");
 const ADMIN_WALLET     = new PublicKey("6oWHZAJs2HACDk6QrZhbb6f9psuJME3FhiAg1kpaKK1Z");
 const DECIMALS         = 1_000_000_000;
