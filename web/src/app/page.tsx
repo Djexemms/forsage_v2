@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { Program, AnchorProvider, Idl } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { PublicKey, SystemProgram, ParsedTransactionWithMeta } from "@solana/web3.js";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import idl from "../forsage_v2.json";
@@ -18,9 +18,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 const PROGRAM_ID       = new PublicKey("DhNMofqKPt5hhUkQCRFHjDC6jPQz5sHhuYR59ZGT8XCX");
 const GEM_MINT         = new PublicKey("H2y3xXuZmCXYHgHkgmPr1q6SWBjzW3BjVzEyuEpSHn5e");
 const ADMIN_WALLET     = new PublicKey("6oWHZAJs2HACDk6QrZhbb6f9psuJME3FhiAg1kpaKK1Z");
-// All-zeros pubkey — passed as referrer_key when no referral link detected.
-// On-chain, this tells the program to skip referrer mutation and route 60% to admin's ATA.
-const NO_REFERRER      = new PublicKey("11111111111111111111111111111111");
 const DECIMALS         = 1_000_000_000;
 const REGISTRATION_FEE = 100;
 const ONE_DAY_MS       = 86_400_000;
@@ -34,14 +31,17 @@ const MATRIX_LEVELS: Record<string, number[]> = {
 const [statsPDA] = PublicKey.findProgramAddressSync([Buffer.from("global_stats")], PROGRAM_ID);
 const [vaultPDA] = PublicKey.findProgramAddressSync([Buffer.from("vault")], PROGRAM_ID);
 
+function getAdminPDA() {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("user_account"), ADMIN_WALLET.toBuffer()], PROGRAM_ID
+  )[0];
+}
+
 function getUserPDA(wallet: PublicKey) {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("user_account"), wallet.toBuffer()], PROGRAM_ID
   )[0];
 }
-
-// Admin's UserState PDA — used as referrerAccount when no referral link
-const ADMIN_USER_PDA = getUserPDA(ADMIN_WALLET);
 
 // ─── GEM Price ───────────────────────────────────────────────────────────────
 let cachedPrice = 0.05;
@@ -161,29 +161,24 @@ function HomeInner() {
         try {
           const account: any = await (program.account as any).userState.fetch(userPDA);
           setUserState({
-            x3Level:         account.x3Level ?? 0,
-            x6Level:         account.x6Level ?? 0,
-            x3SlotsFilled:   account.x3SlotsFilled ?? 0,
-            x6SlotsFilled:   account.x6SlotsFilled ?? 0,
-            x3MatrixCount:   account.x3MatrixCount ?? 0,
-            x6MatrixCount:   account.x6MatrixCount ?? 0,
-            totalGemSpent:   (account.totalGemSpent?.toNumber() ?? 0) / DECIMALS,
-            totalEarned:     (account.totalEarned?.toNumber() ?? 0) / DECIMALS,
-            lastClaimTime:   account.lastClaimTime?.toNumber() ?? 0,
-            isBlockedX3:     account.isBlockedX3 ?? false,
-            isBlockedX6:     account.isBlockedX6 ?? false,
+            x3Level:        account.x3Level ?? 0,
+            x6Level:        account.x6Level ?? 0,
+            x3SlotsFilled:  account.x3SlotsFilled ?? 0,
+            x6SlotsFilled:  account.x6SlotsFilled ?? 0,
+            x3MatrixCount:  account.x3MatrixCount ?? 0,
+            x6MatrixCount:  account.x6MatrixCount ?? 0,
+            totalGemSpent:  (account.totalGemSpent?.toNumber() ?? 0) / DECIMALS,
+            totalEarned:    (account.totalEarned?.toNumber() ?? 0) / DECIMALS,
+            lastClaimTime:  account.lastClaimTime?.toNumber() ?? 0,
+            isBlockedX3:    account.isBlockedX3 ?? false,
+            isBlockedX6:    account.isBlockedX6 ?? false,
             directReferrals: account.directReferrals ?? 0,
             totalReferrals:  account.totalReferrals ?? 0,
             referrer:        account.referrer?.toBase58() ?? "",
-            initialized:     true,
+            initialized:    true,
           });
         } catch {
-          setUserState({
-            x3Level:0, x6Level:0, x3SlotsFilled:0, x6SlotsFilled:0,
-            x3MatrixCount:0, x6MatrixCount:0, totalGemSpent:0, totalEarned:0,
-            lastClaimTime:0, isBlockedX3:false, isBlockedX6:false,
-            directReferrals:0, totalReferrals:0, referrer:"", initialized:false,
-          });
+          setUserState({ x3Level:0,x6Level:0,x3SlotsFilled:0,x6SlotsFilled:0,x3MatrixCount:0,x6MatrixCount:0,totalGemSpent:0,totalEarned:0,lastClaimTime:0,isBlockedX3:false,isBlockedX6:false,directReferrals:0,totalReferrals:0,referrer:"",initialized:false });
         }
 
         // Fetch transaction history
@@ -232,6 +227,30 @@ function HomeInner() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Check if connected wallet is the Admin
+  const isAdmin = publicKey?.toBase58() === ADMIN_WALLET.toBase58();
+
+  // ── Genesis Admin Register ──────────────────────────────────────────────
+  const handleGenesisRegister = async () => {
+    if (!publicKey) return;
+    setLoading(true); setStatus("Initializing Genesis Admin...", "info");
+    try {
+      const program = getProgram();
+      const userPDA = getUserPDA(publicKey);
+      
+      await (program.methods as any).registerAdmin().accounts({
+        userAccount: userPDA,
+        user: publicKey,
+        systemProgram: SystemProgram.programId,
+      }).rpc();
+      
+      setStatus("Genesis Admin registered! Platform is now open.", "success");
+      await fetchData();
+    } catch (err: any) {
+      setStatus(err?.message ?? "Genesis failed", "error");
+    } finally { setLoading(false); }
+  };
+
   // ── Register ──────────────────────────────────────────────────────────────
   const handleRegister = async () => {
     if (!publicKey) return;
@@ -241,36 +260,23 @@ function HomeInner() {
       const userPDA    = getUserPDA(publicKey);
       const userGemAta = await getAssociatedTokenAddress(GEM_MINT, publicKey);
 
-      const hasReferrer = !!referrerFromUrl;
-
-      // Instruction arg: pass NO_REFERRER (all-zeros) when no ref link detected.
-      // On-chain: referrer_key == Pubkey::default() → skips referrer account mutation,
-      // and the 60% token transfer goes to whatever account we pass as referrerGemToken.
-      const referrerKeyArg = hasReferrer ? referrerFromUrl! : NO_REFERRER;
-
-      // PDA: use referrer's PDA if exists, otherwise admin's PDA (not mutated on-chain)
-      const referrerPDA = hasReferrer
-        ? getUserPDA(referrerFromUrl!)
-        : ADMIN_USER_PDA;
-
-      // Token account: 60% goes to referrer's ATA if referred, else admin's ATA
-      const referrerGemAta = await getAssociatedTokenAddress(
-        GEM_MINT,
-        hasReferrer ? referrerFromUrl! : ADMIN_WALLET
-      );
+      // Use referrer from URL or fallback to admin
+      const referrerKey   = referrerFromUrl ?? ADMIN_WALLET;
+      const referrerPDA   = getUserPDA(referrerKey);
+      const referrerGemAta = await getAssociatedTokenAddress(GEM_MINT, referrerKey);
 
       await (program.methods as any)
-        .register(referrerKeyArg)
+        .register(referrerKey)
         .accounts({
-          userAccount:      userPDA,
-          referrerAccount:  referrerPDA,
-          user:             publicKey,
-          globalStats:      statsPDA,
-          userGemToken:     userGemAta,
-          referrerGemToken: referrerGemAta,
-          vaultGemToken:    vaultPDA,
-          tokenProgram:     TOKEN_PROGRAM_ID,
-          systemProgram:    SystemProgram.programId,
+          userAccount:       userPDA,
+          referrerAccount:   referrerPDA,
+          user:              publicKey,
+          globalStats:       statsPDA,
+          userGemToken:      userGemAta,
+          referrerGemToken:  referrerGemAta,
+          vaultGemToken:     vaultPDA,
+          tokenProgram:      TOKEN_PROGRAM_ID,
+          systemProgram:     SystemProgram.programId,
         })
         .rpc();
 
@@ -291,16 +297,12 @@ function HomeInner() {
 
     setLoading(true); setStatus(`Upgrading ${matrix.toUpperCase()} → Level ${nextLevel}…`, "info");
     try {
-      const program    = getProgram();
-      const userPDA    = getUserPDA(publicKey);
-      const userGemAta = await getAssociatedTokenAddress(GEM_MINT, publicKey);
-
-      // Use stored referrer from user's on-chain account, fallback to admin
-      const referrerWallet = userState.referrer
-        ? new PublicKey(userState.referrer)
-        : ADMIN_WALLET;
-      const referrerPDA     = getUserPDA(referrerWallet);
-      const referrerGemAta  = await getAssociatedTokenAddress(GEM_MINT, referrerWallet);
+      const program      = getProgram();
+      const userPDA      = getUserPDA(publicKey);
+      const userGemAta   = await getAssociatedTokenAddress(GEM_MINT, publicKey);
+      const referrerKey  = userState.referrer ? new PublicKey(userState.referrer) : ADMIN_WALLET;
+      const referrerPDA  = getUserPDA(referrerKey);
+      const referrerGemAta = await getAssociatedTokenAddress(GEM_MINT, referrerKey);
 
       await (program.methods as any)
         .upgradeLevel(matrixArg, nextLevel)
@@ -379,7 +381,7 @@ function HomeInner() {
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-5">
 
-        {/* Referral banner */}
+        {/* Referral banner — show if URL has ?ref= and user not registered */}
         {referrerFromUrl && !isRegistered && (
           <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/20 px-4 py-3 flex items-center gap-3">
             <span className="text-indigo-400 text-lg">🔗</span>
@@ -463,10 +465,17 @@ function HomeInner() {
                   <p className="text-xs text-zinc-600 mt-0.5">+ Daily 1% GEM reward</p>
                 </div>
               </div>
-              <button onClick={handleRegister} disabled={loading}
-                className="w-full py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-black text-lg transition-all disabled:opacity-50 shadow-lg shadow-indigo-600/20">
-                {loading ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Processing…</span> : "Register · 100 GEM"}
-              </button>
+              {isAdmin ? (
+                <button onClick={handleGenesisRegister} disabled={loading}
+                  className="w-full py-4 rounded-xl bg-yellow-600 hover:bg-yellow-500 font-black text-lg transition-all text-black shadow-lg shadow-yellow-600/20">
+                  {loading ? "Processing…" : "Initialize Genesis Admin Account"}
+                </button>
+              ) : (
+                <button onClick={handleRegister} disabled={loading}
+                  className="w-full py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-black text-lg transition-all disabled:opacity-50 shadow-lg shadow-indigo-600/20">
+                  {loading ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Processing…</span> : "Register · 100 GEM"}
+                </button>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -558,14 +567,14 @@ function HomeInner() {
                   </TabsList>
 
                   {(["x3", "x6"] as const).map((matrix) => {
-                    const currentLevel = matrix === "x3" ? (userState?.x3Level ?? 0) : (userState?.x6Level ?? 0);
-                    const slotsFilled  = matrix === "x3" ? (userState?.x3SlotsFilled ?? 0) : (userState?.x6SlotsFilled ?? 0);
-                    const matrixCount  = matrix === "x3" ? (userState?.x3MatrixCount ?? 0) : (userState?.x6MatrixCount ?? 0);
-                    const totalSlots   = matrix === "x3" ? 3 : 6;
-                    const isBlocked    = matrix === "x3" ? userState?.isBlockedX3 : userState?.isBlockedX6;
-                    const nextLevel    = currentLevel + 1;
-                    const costs        = MATRIX_LEVELS[matrix];
-                    const slotProgress = (slotsFilled / totalSlots) * 100;
+                    const currentLevel  = matrix === "x3" ? (userState?.x3Level ?? 0) : (userState?.x6Level ?? 0);
+                    const slotsFilled   = matrix === "x3" ? (userState?.x3SlotsFilled ?? 0) : (userState?.x6SlotsFilled ?? 0);
+                    const matrixCount   = matrix === "x3" ? (userState?.x3MatrixCount ?? 0) : (userState?.x6MatrixCount ?? 0);
+                    const totalSlots    = matrix === "x3" ? 3 : 6;
+                    const isBlocked     = matrix === "x3" ? userState?.isBlockedX3 : userState?.isBlockedX6;
+                    const nextLevel     = currentLevel + 1;
+                    const costs         = MATRIX_LEVELS[matrix];
+                    const slotProgress  = (slotsFilled / totalSlots) * 100;
 
                     return (
                       <TabsContent key={matrix} value={matrix} className="mt-0">
