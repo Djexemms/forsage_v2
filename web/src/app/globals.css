@@ -2,65 +2,116 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 6%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 6%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 239 84% 67%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 240 5% 10%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 5% 10%;
-    --muted-foreground: 240 5% 45%;
-    --accent: 240 5% 10%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5% 100% / 0.06;
-    --input: 240 5% 100% / 0.06;
-    --ring: 239 84% 67%;
-    --radius: 0.75rem;
-  }
+:root {
+  --background: #0a0612;
+  --foreground: #fafafa;
+  --card: #130d1f;
+  --card-foreground: #fafafa;
+  --popover: #130d1f;
+  --popover-foreground: #fafafa;
+  --primary: #a855f7;
+  --primary-foreground: #fafafa;
+  --secondary: #7c3aed;
+  --secondary-foreground: #fafafa;
+  --muted: #1e1529;
+  --muted-foreground: #a1a1aa;
+  --accent: #ec4899;
+  --accent-foreground: #fafafa;
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+  --border: #2e1f47;
+  --input: #1a1025;
+  --ring: #a855f7;
+  --radius: 0.75rem;
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-    -webkit-font-smoothing: antialiased;
-  }
+* {
+  border-color: var(--border);
 }
 
-/* Wallet adapter overrides */
+body {
+  background-color: #0a0612;
+  color: var(--foreground);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(139, 92, 246, 0.05);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.5);
+}
+
+/* Solana wallet button overrides */
 .wallet-adapter-button {
-  background: rgba(255,255,255,0.04) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(236, 72, 153, 0.2)) !important;
+  border: 1px solid rgba(168, 85, 247, 0.4) !important;
   border-radius: 12px !important;
   font-weight: 700 !important;
-  font-size: 13px !important;
-  height: 38px !important;
-  padding: 0 16px !important;
-  color: white !important;
-  transition: all 0.15s !important;
+  transition: all 0.2s ease !important;
 }
+
 .wallet-adapter-button:hover {
-  background: rgba(255,255,255,0.07) !important;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(236, 72, 153, 0.3)) !important;
+  border-color: rgba(168, 85, 247, 0.6) !important;
+  transform: translateY(-1px);
 }
-.wallet-adapter-button-trigger {
-  background: #4f46e5 !important;
-  border: none !important;
-}
-.wallet-adapter-button-trigger:hover {
-  background: #6366f1 !important;
-}
+
 .wallet-adapter-modal-wrapper {
-  background: #0d0d14 !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-  border-radius: 20px !important;
+  background: rgba(15, 10, 30, 0.98) !important;
+  border: 1px solid rgba(168, 85, 247, 0.3) !important;
+}
+
+/* Glow effects */
+.glow-purple {
+  box-shadow: 0 0 40px rgba(168, 85, 247, 0.3), 0 0 80px rgba(168, 85, 247, 0.1);
+}
+
+.glow-pink {
+  box-shadow: 0 0 40px rgba(236, 72, 153, 0.3), 0 0 80px rgba(236, 72, 153, 0.1);
+}
+
+.glow-text {
+  text-shadow: 0 0 20px rgba(168, 85, 247, 0.5), 0 0 40px rgba(168, 85, 247, 0.3);
+}
+
+/* Animation keyframes */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
 }

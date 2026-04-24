@@ -442,7 +442,7 @@ pub struct Register<'info> {
         space = UserState::SIZE,
         seeds = [b"forsage_user", user.key().as_ref()], bump
     )]
-    pub user_account: Account<'info, UserState>,
+    pub user_account: Box<Account<'info, UserState>>,
 
     /// The referrer's user account — must already be registered
     /// If no referrer, pass the admin's user account
@@ -450,33 +450,33 @@ pub struct Register<'info> {
         mut,
         seeds = [b"forsage_user", referrer_account.owner.as_ref()], bump
     )]
-    pub referrer_account: Account<'info, UserState>,
+    pub referrer_account: Box<Account<'info, UserState>>,
 
     #[account(mut)]
     pub user: Signer<'info>,
 
     #[account(mut, seeds = [b"global_stats"], bump)]
-    pub global_stats: Account<'info, GlobalStats>,
+    pub global_stats: Box<Account<'info, GlobalStats>>,
 
     #[account(
         mut,
         constraint = user_gem_token.mint == GEM_MINT_ADDRESS @ CoreSageError::InvalidTokenOwner,
         constraint = user_gem_token.owner == user.key() @ CoreSageError::InvalidTokenOwner
     )]
-    pub user_gem_token: Account<'info, TokenAccount>,
+    pub user_gem_token: Box<Account<'info, TokenAccount>>,
 
     /// Referrer's GEM token account — receives 60%
     #[account(
         mut,
         constraint = referrer_gem_token.mint == GEM_MINT_ADDRESS @ CoreSageError::InvalidTokenOwner
     )]
-    pub referrer_gem_token: Account<'info, TokenAccount>,
+    pub referrer_gem_token: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut, seeds = [b"vault"], bump,
         constraint = vault_gem_token.mint == GEM_MINT_ADDRESS @ CoreSageError::InvalidTokenOwner
     )]
-    pub vault_gem_token: Account<'info, TokenAccount>,
+    pub vault_gem_token: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -489,40 +489,40 @@ pub struct UpgradeLevel<'info> {
         seeds = [b"forsage_user", user.key().as_ref()], bump,
         constraint = user_account.owner == user.key() @ CoreSageError::Unauthorized
     )]
-    pub user_account: Account<'info, UserState>,
+    pub user_account: Box<Account<'info, UserState>>,
 
     /// Referrer's account — receives 60% of upgrade payment
     #[account(
         mut,
         seeds = [b"forsage_user", referrer_account.owner.as_ref()], bump
     )]
-    pub referrer_account: Account<'info, UserState>,
+    pub referrer_account: Box<Account<'info, UserState>>,
 
     #[account(mut)]
     pub user: Signer<'info>,
 
     #[account(mut, seeds = [b"global_stats"], bump)]
-    pub global_stats: Account<'info, GlobalStats>,
+    pub global_stats: Box<Account<'info, GlobalStats>>,
 
     #[account(
         mut,
         constraint = user_gem_token.mint == GEM_MINT_ADDRESS @ CoreSageError::InvalidTokenOwner,
         constraint = user_gem_token.owner == user.key() @ CoreSageError::InvalidTokenOwner
     )]
-    pub user_gem_token: Account<'info, TokenAccount>,
+    pub user_gem_token: Box<Account<'info, TokenAccount>>,
 
     /// Referrer's GEM token account — receives 60%
     #[account(
         mut,
         constraint = referrer_gem_token.mint == GEM_MINT_ADDRESS @ CoreSageError::InvalidTokenOwner
     )]
-    pub referrer_gem_token: Account<'info, TokenAccount>,
+    pub referrer_gem_token: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut, seeds = [b"vault"], bump,
         constraint = vault_gem_token.mint == GEM_MINT_ADDRESS @ CoreSageError::InvalidTokenOwner
     )]
-    pub vault_gem_token: Account<'info, TokenAccount>,
+    pub vault_gem_token: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
 }
